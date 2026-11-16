@@ -107,9 +107,35 @@ Update these call sites when upgrading. The old names are removed; callback name
 
 ## Development
 
+Install [Task v3](https://taskfile.dev/docs/installation), then run:
+
 ```sh
-go test -race ./...
-go vet ./...
+task --list     # Show available tasks
+task fmt        # Format Go files
+task tidy       # Update module dependencies
+task check      # Check formatting, module tidiness, race tests, and go vet
+```
+
+`task test` and `task vet` run the individual Go checks. `task check` leaves source and module files unchanged; use `task fmt` or `task tidy` to fix the corresponding failures.
+
+## Publishing a version
+
+Update the code and relevant documentation, commit and push to `main`, and wait for CI to pass. Then run:
+
+```sh
+task release VERSION=v0.2.1
+```
+
+This runs all checks, requires a clean working tree on `main` matching `origin/main`, creates an annotated version tag, and pushes that tag. Pushing the tag publishes the Go module version and triggers CI again. It does not create a GitHub Release.
+
+Use a new stable version such as `v0.2.1` for fixes or `v0.3.0` for features or breaking changes while the module is on v0. The task accepts v0 and v1 versions; v2 and later require updating the module path first. Never move an already published tag.
+
+If the tag push fails after the local tag was created, resolve the push failure and retry `git push origin v0.2.1` without recreating the tag.
+
+After the tag's CI run passes, optionally publish generated GitHub release notes using the authenticated GitHub CLI:
+
+```sh
+task release:notes VERSION=v0.2.1
 ```
 
 ## License

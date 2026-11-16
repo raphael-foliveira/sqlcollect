@@ -1,0 +1,98 @@
+version: '3'
+
+tasks:
+  default:
+    desc: List available tasks
+    silent: true
+    cmds:
+      - task --list
+
+  fmt:
+    desc: Format Go files
+    cmds:
+      - gofmt -w .
+
+  fmt:check:
+    desc: Check Go formatting without changing files
+    cmds:
+      - |
+        set -eu
+        unformatted=$(gofmt -l .)
+        if [ -n "$unformatted" ]; then
+          printf 'Run task fmt to format:\n%s\n' "$unformatted"
+          exit 1
+        fi
+
+  tidy:
+    desc: Update go.mod and go.sum
+    cmds:
+      - go mod tidy
+
+  tidy:check:
+    desc: Check module tidiness without changing files
+    cmds:
+      - |
+        set -eu
+        module_tmp=$(mktemp -d)
+        trap 'rm -rf "$module_tmp"' EXIT
+        cp go.mod go.sum "$module_tmp/"
+        go mod tidy -modfile "$module_tmp/go.mod"
+        diff -u go.mod "$module_tmp/go.mod"
+        diff -u go.sum "$module_tmp/go.sum"
+
+  test:
+    desc: Run tests with the race detector
+    cmds:
+      - go test -race ./...
+
+  vet:
+    desc: Run Go static checks
+    cmds:
+      - go vet ./...
+
+  check:
+    desc: Check formatting, module tidiness, tests, and static analysis
+    cmds:
+      - task: fmt:check
+      - task: tidy:check
+      - task: test
+      - task: vet
+
+  release:
+    desc: 'Validate, tag, and publish a version (VERSION=v0.2.1)'
+    requires:
+      vars: [VERSION]
+    env:
+      RELEASE_VERSION: '{{.VERSION}}'
+    preconditions:
+      - sh: printf '%s\n' "$RELEASE_VERSION" | grep -Eq '^v(0|1)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+        msg: 'VERSION must be a stable v0.x.y or v1.x.y version, such as v0.2.1. Major versions >=2 require a new module path.'
+      - sh: test -z "$(git status --porcelain)"
+        msg: Commit or discard all working tree changes before releasing.
+      - sh: test "$(git branch --show-current)" = main
+        msg: Release from the main branch.
+      - sh: '! git show-ref --verify --quiet "refs/tags/$RELEASE_VERSION"'
+        msg: This tag already exists locally. Choose a new version, or push the existing tag if retrying a failed push.
+    cmds:
+      - task: check
+      - |
+        set -eu
+        git fetch origin main
+        if [ "$(git rev-parse HEAD)" != "$(git rev-parse FETCH_HEAD)" ]; then
+          printf 'Local main must match origin/main. Push or update main before releasing.\n'
+          exit 1
+        fi
+        git tag -a "$RELEASE_VERSION" -m "Release $RELEASE_VERSION"
+        git push origin "refs/tags/$RELEASE_VERSION"
+
+  release:notes:
+    desc: 'Create GitHub release notes for a published tag (VERSION=v0.2.1)'
+    requires:
+      vars: [VERSION]
+    env:
+      RELEASE_VERSION: '{{.VERSION}}'
+    preconditions:
+      - sh: printf '%s\n' "$RELEASE_VERSION" | grep -Eq '^v(0|1)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+        msg: 'VERSION must be a stable v0.x.y or v1.x.y version, such as v0.2.1.'
+    cmds:
+      - gh release create "$RELEASE_VERSION" --verify-tag --title "$RELEASE_VERSION" --generate-notes
