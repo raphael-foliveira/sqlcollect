@@ -3,6 +3,7 @@ package sqlcollect_test
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -147,9 +148,73 @@ func TestEmbeddedAndScannerFields(t *testing.T) {
 	if err != nil || got.Identity == nil || got.ID != 7 || got.Name.Valid || got.Age == nil || *got.Age != 42 {
 		t.Fatalf("got %#v, %v", got, err)
 	}
+	records, err := sqlcollect.Rows(query(t, db, `select NULL as name, 42 as age, 7 as id union all select 'Alice', 43, 8`), sqlcollect.RowToStructByName[Record])
+	if err != nil || len(records) != 2 {
+		t.Fatalf("got %#v, %v", records, err)
+	}
+	if records[0].Identity == records[1].Identity || records[0].ID != 7 || records[1].ID != 8 ||
+		records[0].Age == records[1].Age || *records[0].Age != 42 || *records[1].Age != 43 ||
+		records[0].Name.Valid || records[1].Name.String != "Alice" {
+		t.Fatalf("row destinations were reused: %#v", records)
+	}
 	type Scanner struct{ sql.NullString }
 	value, err := sqlcollect.OneRow(query(t, db, `select 'hello' as NullString`), sqlcollect.RowToStructByName[Scanner])
 	if err != nil || !value.Valid || value.String != "hello" {
 		t.Fatalf("embedded scanner: %#v, %v", value, err)
+	}
+}
+
+func TestStructMappingLayouts(t *testing.T) {
+	type Pair struct {
+		First  int `db:"left"`
+		Second int `db:"right"`
+	}
+	type Reversed struct {
+		Second int `db:"right"`
+		First  int `db:"left"`
+	}
+	db := openDB(t)
+	for _, q := range []string{
+		`select 1 as "left", 2 as "right"`,
+		`select 2 as "right", 1 as "left"`,
+		`select 1 as "LEFT", 2 as "RIGHT"`,
+		`select 1 as "left", 2 as "right"`,
+	} {
+		got, err := sqlcollect.OneRow(query(t, db, q), sqlcollect.RowToStructByName[Pair])
+		if err != nil || got != (Pair{First: 1, Second: 2}) {
+			t.Fatalf("%s: got %#v, %v", q, got, err)
+		}
+		other, err := sqlcollect.OneRow(query(t, db, q), sqlcollect.RowToStructByName[Reversed])
+		if err != nil || other != (Reversed{First: 1, Second: 2}) {
+			t.Fatalf("%s: different struct got %#v, %v", q, other, err)
+		}
+	}
+	for _, q := range []string{
+		`select 1 as "left", 2 as "unknown"`,
+		`select 1 as "left", 2 as "LEFT"`,
+		`select 1 as "left"`,
+	} {
+		if _, err := sqlcollect.OneRow(query(t, db, q), sqlcollect.RowToStructByName[Pair]); err == nil {
+			t.Fatalf("%s: invalid layout accepted after valid layouts were cached", q)
+		}
+	}
+}
+
+func TestStructMappingConcurrent(t *testing.T) {
+	type Record struct {
+		ID   int    `db:"record_id"`
+		Name string `db:"record_name"`
+	}
+	for i := range 16 {
+		t.Run(fmt.Sprint(i), func(t *testing.T) {
+			t.Parallel()
+			db := openDB(t)
+			q := fmt.Sprintf(`select %d as record_id, 'Alice' as record_name union all select %d, 'Bob'`, i, i+1)
+			got, err := sqlcollect.Rows(query(t, db, q), sqlcollect.RowToStructByName[Record])
+			want := []Record{{ID: i, Name: "Alice"}, {ID: i + 1, Name: "Bob"}}
+			if err != nil || !reflect.DeepEqual(got, want) {
+				t.Fatalf("got %#v, %v; want %#v", got, err, want)
+			}
+		})
 	}
 }

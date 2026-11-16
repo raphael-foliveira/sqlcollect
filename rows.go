@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -86,8 +87,9 @@ func RowTo[T any](row CollectableRow) (T, error) {
 // field names, case-insensitively. A db tag overrides the name; db:"-" ignores a
 // field. Every column and every non-ignored exported field must match exactly
 // once. Exported embedded structs (including pointers) are flattened, while
-// sql.Scanner fields are scanned as values. Struct metadata is cached safely
-// across goroutines. T must be a struct; use RowToAddrOfStructByName for pointers.
+// sql.Scanner fields are scanned as values. Struct metadata and column mappings
+// are cached safely across goroutines. T must be a struct; use
+// RowToAddrOfStructByName for pointers.
 func RowToStructByName[T any](row CollectableRow) (T, error) {
 	var value T
 	if err := scanStruct(row, reflect.ValueOf(&value).Elem()); err != nil {
@@ -112,9 +114,15 @@ type structFields struct {
 	err    error
 }
 
+type mappingKey struct {
+	typ     reflect.Type
+	columns string
+}
+
 var (
-	fieldCache  sync.Map // map[reflect.Type]structFields
-	scannerType = reflect.TypeFor[sql.Scanner]()
+	fieldCache   sync.Map // map[reflect.Type]structFields
+	mappingCache sync.Map // map[mappingKey][][]int
+	scannerType  = reflect.TypeFor[sql.Scanner]()
 )
 
 func fieldsFor(typ reflect.Type) structFields {
@@ -160,33 +168,63 @@ func fieldsFor(typ reflect.Type) structFields {
 	return actual.(structFields)
 }
 
-func scanStruct(row CollectableRow, value reflect.Value) error {
-	if value.Kind() != reflect.Struct {
-		return fmt.Errorf("sqlcollect: expected a struct, got %s", value.Type())
+// pathsFor caches field paths in column order, never addresses into a result.
+func pathsFor(typ reflect.Type, columns []string) ([][]int, error) {
+	var names strings.Builder
+	var size int
+	for _, column := range columns {
+		size += len(strconv.Itoa(len(column))) + 1 + len(column)
 	}
-	fields := fieldsFor(value.Type())
+	names.Grow(size)
+	for _, column := range columns {
+		// Length prefixes keep arbitrary column names unambiguous.
+		names.WriteString(strconv.Itoa(len(column)))
+		names.WriteByte(':')
+		names.WriteString(column)
+	}
+	key := mappingKey{typ: typ, columns: names.String()}
+	if cached, ok := mappingCache.Load(key); ok {
+		return cached.([][]int), nil
+	}
+	fields := fieldsFor(typ)
 	if fields.err != nil {
-		return fields.err
-	}
-	columns, err := row.Columns()
-	if err != nil {
-		return err
+		return nil, fields.err
 	}
 	if len(columns) != len(fields.byName) {
-		return fmt.Errorf("sqlcollect: %d columns do not match %d fields in %s", len(columns), len(fields.byName), value.Type())
+		return nil, fmt.Errorf("sqlcollect: %d columns do not match %d fields in %s", len(columns), len(fields.byName), typ)
 	}
-	dest := make([]any, len(columns))
+	paths := make([][]int, len(columns))
 	seen := make(map[string]bool, len(columns))
 	for i, column := range columns {
 		name := strings.ToLower(column)
 		path, ok := fields.byName[name]
 		if !ok {
-			return fmt.Errorf("sqlcollect: no field for column %q in %s", column, value.Type())
+			return nil, fmt.Errorf("sqlcollect: no field for column %q in %s", column, typ)
 		}
 		if seen[name] {
-			return fmt.Errorf("sqlcollect: duplicate column %q", column)
+			return nil, fmt.Errorf("sqlcollect: duplicate column %q", column)
 		}
 		seen[name] = true
+		paths[i] = path
+	}
+	actual, _ := mappingCache.LoadOrStore(key, paths)
+	return actual.([][]int), nil
+}
+
+func scanStruct(row CollectableRow, value reflect.Value) error {
+	if value.Kind() != reflect.Struct {
+		return fmt.Errorf("sqlcollect: expected a struct, got %s", value.Type())
+	}
+	columns, err := row.Columns()
+	if err != nil {
+		return err
+	}
+	paths, err := pathsFor(value.Type(), columns)
+	if err != nil {
+		return err
+	}
+	dest := make([]any, len(paths))
+	for i, path := range paths {
 		field := value
 		for _, index := range path {
 			if field.Kind() == reflect.Pointer {

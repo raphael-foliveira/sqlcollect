@@ -8,7 +8,7 @@ Requires Go 1.22 or later.
 ## Install
 
 ```sh
-go get github.com/raphael-foliveira/sqlcollect@v0.2.0
+go get github.com/raphael-foliveira/sqlcollect@v0.2.1
 ```
 
 ## Collect structs
@@ -84,7 +84,7 @@ names, err := sqlcollect.Rows(rows, func(row sqlcollect.CollectableRow) (string,
 - Use `sql.NullString`, other `sql.Null*` types, or pointer fields for nullable columns. Conversion behavior comes from `database/sql` and your driver.
 - Pass a struct type to `RowToStructByName[T]` and `RowToAddrOfStructByName[T]`; use the latter to get pointers.
 
-Struct metadata is cached and safe for concurrent use. Tags are literal column names; comma-separated tag options are not supported. There is no implicit snake_case conversion.
+Struct metadata and successful column mappings are cached and safe for concurrent use. Mappings are keyed by struct type and ordered column names; each row gets its own scan destinations. Tags are literal column names; comma-separated tag options are not supported. There is no implicit snake_case conversion.
 
 ## Results and errors
 
