@@ -20,9 +20,9 @@ type CollectableRow interface {
 // lifetime is limited to the current row (such as sql.RawBytes).
 type RowToFunc[T any] func(CollectableRow) (T, error)
 
-// CollectRows converts every row and closes rows before returning, including on
+// Rows converts every row and closes rows before returning, including on
 // errors. An empty result produces a non-nil empty slice; errors discard results.
-func CollectRows[T any](rows *sql.Rows, fn RowToFunc[T]) (values []T, err error) {
+func Rows[T any](rows *sql.Rows, fn RowToFunc[T]) (values []T, err error) {
 	defer func() {
 		err = closeRows(rows, err)
 		if err != nil {
@@ -43,9 +43,9 @@ func CollectRows[T any](rows *sql.Rows, fn RowToFunc[T]) (values []T, err error)
 	return values, nil
 }
 
-// CollectOneRow converts the first row and closes rows, discarding any remaining
+// OneRow converts the first row and closes rows, discarding any remaining
 // rows. It returns sql.ErrNoRows when the result is empty.
-func CollectOneRow[T any](rows *sql.Rows, fn RowToFunc[T]) (value T, err error) {
+func OneRow[T any](rows *sql.Rows, fn RowToFunc[T]) (value T, err error) {
 	defer func() {
 		err = closeRows(rows, err)
 		if err != nil {
@@ -112,8 +112,10 @@ type structFields struct {
 	err    error
 }
 
-var fieldCache sync.Map // map[reflect.Type]structFields
-var scannerType = reflect.TypeFor[sql.Scanner]()
+var (
+	fieldCache  sync.Map // map[reflect.Type]structFields
+	scannerType = reflect.TypeFor[sql.Scanner]()
+)
 
 func fieldsFor(typ reflect.Type) structFields {
 	if cached, ok := fieldCache.Load(typ); ok {

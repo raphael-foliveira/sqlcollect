@@ -55,9 +55,9 @@ func TestIterationAndCloseErrors(t *testing.T) {
 			rows := query(t, db, "ignored")
 			var err error
 			if one {
-				_, err = sqlcollect.CollectOneRow(rows, sqlcollect.RowTo[int])
+				_, err = sqlcollect.OneRow(rows, sqlcollect.RowTo[int])
 			} else {
-				_, err = sqlcollect.CollectRows(rows, sqlcollect.RowTo[int])
+				_, err = sqlcollect.Rows(rows, sqlcollect.RowTo[int])
 			}
 			db.Close()
 			if !errors.Is(err, want) || !r.closed {
@@ -73,7 +73,7 @@ func TestCallbackAndCloseErrors(t *testing.T) {
 	r := &errorRows{nextErr: nil, closeErr: closeErr}
 	db := sql.OpenDB(errorConnector{rows: r})
 	defer db.Close()
-	values, err := sqlcollect.CollectRows(query(t, db, "ignored"), func(sqlcollect.CollectableRow) (int, error) {
+	values, err := sqlcollect.Rows(query(t, db, "ignored"), func(sqlcollect.CollectableRow) (int, error) {
 		return 0, callbackErr
 	})
 	if values != nil || !errors.Is(err, callbackErr) || !errors.Is(err, closeErr) || !r.closed {

@@ -41,7 +41,7 @@ type Person struct {
 func TestCollectStructs(t *testing.T) {
 	db := openDB(t)
 	rows := query(t, db, `select 'Alice' as full_name, 1 as ID union all select 'Bob', 2`)
-	got, err := sqlcollect.CollectRows(rows, sqlcollect.RowToStructByName[Person])
+	got, err := sqlcollect.Rows(rows, sqlcollect.RowToStructByName[Person])
 	want := []Person{{ID: 1, Name: "Alice"}, {ID: 2, Name: "Bob"}}
 	if err != nil || !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %#v, %v; want %#v", got, err, want)
@@ -50,12 +50,12 @@ func TestCollectStructs(t *testing.T) {
 		t.Fatal("rows were not closed")
 	}
 
-	person, err := sqlcollect.CollectOneRow(query(t, db, `select 3 as id, 'Carol' as full_name`), sqlcollect.RowToAddrOfStructByName[Person])
+	person, err := sqlcollect.OneRow(query(t, db, `select 3 as id, 'Carol' as full_name`), sqlcollect.RowToAddrOfStructByName[Person])
 	if err != nil || person == nil || person.ID != 3 || person.Name != "Carol" {
 		t.Fatalf("got %#v, %v", person, err)
 	}
 
-	people, err := sqlcollect.CollectRows(query(t, db, `select 1 as id, 'Alice' as full_name union all select 2, 'Bob'`), sqlcollect.RowToAddrOfStructByName[Person])
+	people, err := sqlcollect.Rows(query(t, db, `select 1 as id, 'Alice' as full_name union all select 2, 'Bob'`), sqlcollect.RowToAddrOfStructByName[Person])
 	if err != nil || len(people) != 2 || people[0] == people[1] || people[0].ID != 1 || people[1].ID != 2 {
 		t.Fatalf("pointer results: %#v, %v", people, err)
 	}
@@ -63,15 +63,15 @@ func TestCollectStructs(t *testing.T) {
 
 func TestEmptyAndScalarResults(t *testing.T) {
 	db := openDB(t)
-	values, err := sqlcollect.CollectRows(query(t, db, `select 1 where false`), sqlcollect.RowTo[int])
+	values, err := sqlcollect.Rows(query(t, db, `select 1 where false`), sqlcollect.RowTo[int])
 	if err != nil || values == nil || len(values) != 0 {
 		t.Fatalf("empty result: %#v, %v", values, err)
 	}
-	_, err = sqlcollect.CollectOneRow(query(t, db, `select 1 where false`), sqlcollect.RowTo[int])
+	_, err = sqlcollect.OneRow(query(t, db, `select 1 where false`), sqlcollect.RowTo[int])
 	if err != sql.ErrNoRows {
 		t.Fatalf("got %v, want sql.ErrNoRows", err)
 	}
-	first, err := sqlcollect.CollectOneRow(query(t, db, `select 1 union all select 2`), sqlcollect.RowTo[int])
+	first, err := sqlcollect.OneRow(query(t, db, `select 1 union all select 2`), sqlcollect.RowTo[int])
 	if err != nil || first != 1 || db.Stats().InUse != 0 {
 		t.Fatalf("first row: %d, %v; in use %d", first, err, db.Stats().InUse)
 	}
@@ -100,7 +100,7 @@ func TestMappingErrors(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			db := openDB(t)
-			got, err := sqlcollect.CollectRows(query(t, db, tt.query), tt.fn)
+			got, err := sqlcollect.Rows(query(t, db, tt.query), tt.fn)
 			if got != nil || err == nil || !strings.Contains(err.Error(), tt.message) {
 				t.Fatalf("got %#v, %v; want error containing %q", got, err, tt.message)
 			}
@@ -125,11 +125,11 @@ func TestCallbackError(t *testing.T) {
 		}
 		return value, err
 	}
-	values, err := sqlcollect.CollectRows(query(t, db, `select 1 union all select 2`), fn)
+	values, err := sqlcollect.Rows(query(t, db, `select 1 union all select 2`), fn)
 	if values != nil || !errors.Is(err, want) || db.Stats().InUse != 0 {
 		t.Fatalf("got %#v, %v; in use %d", values, err, db.Stats().InUse)
 	}
-	value, err := sqlcollect.CollectOneRow(query(t, db, `select 2`), fn)
+	value, err := sqlcollect.OneRow(query(t, db, `select 2`), fn)
 	if value != 0 || !errors.Is(err, want) || db.Stats().InUse != 0 {
 		t.Fatalf("got %d, %v; in use %d", value, err, db.Stats().InUse)
 	}
@@ -143,12 +143,12 @@ func TestEmbeddedAndScannerFields(t *testing.T) {
 		Age  *int           `db:"age"`
 	}
 	db := openDB(t)
-	got, err := sqlcollect.CollectOneRow(query(t, db, `select NULL as name, 42 as age, 7 as id`), sqlcollect.RowToStructByName[Record])
+	got, err := sqlcollect.OneRow(query(t, db, `select NULL as name, 42 as age, 7 as id`), sqlcollect.RowToStructByName[Record])
 	if err != nil || got.Identity == nil || got.ID != 7 || got.Name.Valid || got.Age == nil || *got.Age != 42 {
 		t.Fatalf("got %#v, %v", got, err)
 	}
 	type Scanner struct{ sql.NullString }
-	value, err := sqlcollect.CollectOneRow(query(t, db, `select 'hello' as NullString`), sqlcollect.RowToStructByName[Scanner])
+	value, err := sqlcollect.OneRow(query(t, db, `select 'hello' as NullString`), sqlcollect.RowToStructByName[Scanner])
 	if err != nil || !value.Valid || value.String != "hello" {
 		t.Fatalf("embedded scanner: %#v, %v", value, err)
 	}

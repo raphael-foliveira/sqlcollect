@@ -8,7 +8,7 @@ Requires Go 1.22 or later.
 ## Install
 
 ```sh
-go get github.com/raphael-foliveira/sqlcollect
+go get github.com/raphael-foliveira/sqlcollect@v0.2.0
 ```
 
 ## Collect structs
@@ -33,7 +33,7 @@ func passengers(ctx context.Context, db *sql.DB) ([]Passenger, error) {
     if err != nil {
         return nil, err
     }
-    return sqlcollect.CollectRows(rows, sqlcollect.RowToStructByName[Passenger])
+    return sqlcollect.Rows(rows, sqlcollect.RowToStructByName[Passenger])
 }
 ```
 
@@ -49,23 +49,23 @@ rows, err := db.QueryContext(ctx, `
 if err != nil {
     return nil, err
 }
-return sqlcollect.CollectOneRow(rows, sqlcollect.RowToAddrOfStructByName[Passenger])
+return sqlcollect.OneRow(rows, sqlcollect.RowToAddrOfStructByName[Passenger])
 ```
 
-Use your driver's parameter syntax (`?`, `$1`, etc.). `CollectOneRow` returns the first result, discards additional rows, and closes rows. An empty result returns `sql.ErrNoRows`.
+Use your driver's parameter syntax (`?`, `$1`, etc.). `OneRow` returns the first result, discards additional rows, and closes rows. An empty result returns `sql.ErrNoRows`.
 
 ## Scalars and custom callbacks
 
 Use `RowTo[T]` for a single column:
 
 ```go
-ids, err := sqlcollect.CollectRows(rows, sqlcollect.RowTo[int])
+ids, err := sqlcollect.Rows(rows, sqlcollect.RowTo[int])
 ```
 
 A callback can also scan and transform values directly:
 
 ```go
-names, err := sqlcollect.CollectRows(rows, func(row sqlcollect.CollectableRow) (string, error) {
+names, err := sqlcollect.Rows(rows, func(row sqlcollect.CollectableRow) (string, error) {
     var first, last string
     if err := row.Scan(&first, &last); err != nil {
         return "", err
@@ -88,11 +88,22 @@ Struct metadata is cached and safe for concurrent use. Tags are literal column n
 
 ## Results and errors
 
-`CollectRows` returns a non-nil empty slice for an empty result. On error, it returns a nil slice and discards any collected values. `CollectOneRow` returns the zero value on error.
+`Rows` returns a non-nil empty slice for an empty result. On error, it returns a nil slice and discards any collected values. `OneRow` returns the zero value on error.
 
-Query errors belong to the caller. Collectors propagate callback, scan, iteration, and close errors; simultaneous callback and close errors are joined, so use `errors.Is` or `errors.As` to inspect them. `CollectOneRow` does not scan discarded rows or detect errors in those rows.
+Query errors belong to the caller. Collectors propagate callback, scan, iteration, and close errors; simultaneous callback and close errors are joined, so use `errors.Is` or `errors.As` to inspect them. `OneRow` does not scan discarded rows or detect errors in those rows.
 
 Callbacks must copy borrowed data such as `sql.RawBytes` before returning it. The collectors close rows before returning, so borrowed row memory cannot be retained.
+
+## Upgrading from v0.1.0
+
+v0.2.0 renames the collection functions to avoid repeating the package name's verb:
+
+| v0.1.0 | v0.2.0 |
+| --- | --- |
+| `sqlcollect.CollectRows` | `sqlcollect.Rows` |
+| `sqlcollect.CollectOneRow` | `sqlcollect.OneRow` |
+
+Update these call sites when upgrading. The old names are removed; callback names and collection behavior are unchanged.
 
 ## Development
 

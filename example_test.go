@@ -8,7 +8,7 @@ import (
 	"github.com/raphael-foliveira/sqlcollect"
 )
 
-func ExampleCollectRows() {
+func ExampleRows() {
 	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
 		panic(err)
@@ -23,7 +23,7 @@ func ExampleCollectRows() {
 	if err != nil {
 		panic(err)
 	}
-	people, err := sqlcollect.CollectRows(rows, sqlcollect.RowToStructByName[Person])
+	people, err := sqlcollect.Rows(rows, sqlcollect.RowToStructByName[Person])
 	if err != nil {
 		panic(err)
 	}
@@ -35,7 +35,7 @@ func ExampleCollectRows() {
 	// 2 Bob
 }
 
-func ExampleCollectOneRow() {
+func ExampleOneRow() {
 	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
 		panic(err)
@@ -46,7 +46,7 @@ func ExampleCollectOneRow() {
 	if err != nil {
 		panic(err)
 	}
-	answer, err := sqlcollect.CollectOneRow(rows, sqlcollect.RowTo[int])
+	answer, err := sqlcollect.OneRow(rows, sqlcollect.RowTo[int])
 	if err != nil {
 		panic(err)
 	}
