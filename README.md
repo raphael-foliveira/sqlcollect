@@ -94,17 +94,6 @@ Query errors belong to the caller. Collectors propagate callback, scan, iteratio
 
 Callbacks must copy borrowed data such as `sql.RawBytes` before returning it. The collectors close rows before returning, so borrowed row memory cannot be retained.
 
-## Upgrading from v0.1.0
-
-v0.2.0 renames the collection functions to avoid repeating the package name's verb:
-
-| v0.1.0 | v0.2.0 |
-| --- | --- |
-| `sqlcollect.CollectRows` | `sqlcollect.Rows` |
-| `sqlcollect.CollectOneRow` | `sqlcollect.OneRow` |
-
-Update these call sites when upgrading. The old names are removed; callback names and collection behavior are unchanged.
-
 ## Development
 
 Install [Task v3](https://taskfile.dev/docs/installation), then run:
